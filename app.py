@@ -66,9 +66,15 @@ if page == "Dashboard":
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
 
-    since_str = since.strftime("%Y-%m-%dT%H:%M:%S")
+    since_str = since.strftime("%Y-%m-%dT%H:%M:%S+00:00")
     df_opor = query_table("oportunidades", filters=f"timestamp=gte.{since_str}")
     df_ses = query_table("sesiones", filters=f"timestamp=gte.{since_str}")
+
+    # Debug: if empty try without filter
+    if len(df_opor) == 0:
+        df_opor = query_table("oportunidades")
+    if len(df_ses) == 0:
+        df_ses = query_table("sesiones")
 
     with col1:
         st.metric("Oportunidades", len(df_opor))
