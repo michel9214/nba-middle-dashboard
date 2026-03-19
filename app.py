@@ -4,7 +4,7 @@ Accesible desde iPhone / cualquier navegador
 """
 import streamlit as st
 import pandas as pd
-import psycopg2
+import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -30,23 +30,24 @@ if not st.session_state.auth:
     st.stop()
 
 
-# ── DB Connection ──
-@st.cache_resource
-def get_conn():
-    return psycopg2.connect(
-        st.secrets["DATABASE_URL"],
-    )
+# ── Supabase REST API ──
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 
 
-def query(sql, params=None):
-    conn = get_conn()
+def query_table(table, select="*", filters="", order="timestamp.desc", limit=1000):
+    """Query Supabase REST API."""
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select={select}&order={order}&limit={limit}"
+    if filters:
+        url += f"&{filters}"
     try:
-        return pd.read_sql(sql, conn, params=params)
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            return pd.DataFrame(r.json())
+        return pd.DataFrame()
     except Exception:
-        # Reconnect on stale connection
-        st.cache_resource.clear()
-        conn = get_conn()
-        return pd.read_sql(sql, conn, params=params)
+        return pd.DataFrame()
 
 
 # ── Sidebar ──
@@ -65,14 +66,9 @@ if page == "Dashboard":
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
 
-    df_opor = query(
-        "SELECT * FROM oportunidades WHERE timestamp >= %s ORDER BY timestamp DESC",
-        (since,),
-    )
-    df_ses = query(
-        "SELECT * FROM sesiones WHERE timestamp >= %s ORDER BY timestamp DESC",
-        (since,),
-    )
+    since_str = since.strftime("%Y-%m-%dT%H:%M:%S")
+    df_opor = query_table("oportunidades", filters=f"timestamp=gte.{since_str}")
+    df_ses = query_table("sesiones", filters=f"timestamp=gte.{since_str}")
 
     with col1:
         st.metric("Oportunidades", len(df_opor))
@@ -115,10 +111,7 @@ if page == "Dashboard":
 elif page == "Oportunidades":
     st.title("Oportunidades Detectadas")
 
-    df = query(
-        "SELECT * FROM oportunidades WHERE timestamp >= %s ORDER BY timestamp DESC",
-        (since,),
-    )
+    df = query_table("oportunidades", filters=f"timestamp=gte.{since.strftime('%Y-%m-%dT%H:%M:%S')}")
 
     if len(df) == 0:
         st.info("Sin oportunidades en este periodo")
@@ -156,10 +149,7 @@ elif page == "Oportunidades":
 elif page == "Lineas":
     st.title("Movimiento de Lineas")
 
-    df = query(
-        "SELECT * FROM snapshots WHERE timestamp >= %s ORDER BY timestamp DESC LIMIT 5000",
-        (since,),
-    )
+    df = query_table("snapshots", filters=f"timestamp=gte.{since.strftime('%Y-%m-%dT%H:%M:%S')}", limit=5000)
 
     if len(df) == 0:
         st.info("Sin snapshots en este periodo")
@@ -208,10 +198,7 @@ elif page == "Lineas":
 elif page == "Sesiones":
     st.title("Sesiones de Escaneo")
 
-    df = query(
-        "SELECT * FROM sesiones WHERE timestamp >= %s ORDER BY timestamp DESC",
-        (since,),
-    )
+    df = query_table("sesiones", filters=f"timestamp=gte.{since.strftime('%Y-%m-%dT%H:%M:%S')}")
 
     if len(df) == 0:
         st.info("Sin sesiones en este periodo")
