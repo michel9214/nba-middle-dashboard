@@ -68,18 +68,11 @@ if page == "Dashboard":
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
 
-    since_str = since.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    df_opor = query_table("oportunidades", filters=f"timestamp=gte.{since_str}")
-    df_ses = query_table("sesiones", filters=f"timestamp=gte.{since_str}")
+    since_iso = since.strftime("%Y-%m-%dT%H:%M:%S")
+    df_opor = query_table("oportunidades", filters=f"timestamp=gte.{since_iso}")
+    df_ses = query_table("sesiones", filters=f"timestamp=gte.{since_iso}")
 
-    # Debug: if empty try without filter
-    if len(df_opor) == 0:
-        df_opor = query_table("oportunidades")
-    if len(df_ses) == 0:
-        df_ses = query_table("sesiones")
-
-    # Debug
-    st.caption(f"URL: {SUPABASE_URL[:30]}... | Key: {SUPABASE_KEY[:20]}... | Opor rows: {len(df_opor)} | Ses rows: {len(df_ses)}")
+    st.caption(f"Datos: {len(df_opor)} oportunidades | {len(df_ses)} sesiones | Periodo: {days}d")
 
     with col1:
         st.metric("Oportunidades", len(df_opor))
@@ -90,8 +83,20 @@ if page == "Dashboard":
         surebets = len(df_opor[df_opor["tipo"] == "SUREBET"]) if len(df_opor) > 0 else 0
         st.metric("Surebets", surebets)
     with col4:
-        mejor_gap = df_opor["gap"].max() if len(df_opor) > 0 and "gap" in df_opor.columns else 0
-        st.metric("Mejor Gap", f"{mejor_gap:.1f} pts" if mejor_gap else "0")
+        mejor_gap = 0
+        if len(df_opor) > 0 and "gap" in df_opor.columns:
+            gaps = df_opor["gap"].dropna()
+            mejor_gap = float(gaps.max()) if len(gaps) > 0 else 0
+        mejor_profit = 0
+        if len(df_opor) > 0 and "profit_pct" in df_opor.columns:
+            profits = df_opor["profit_pct"].dropna()
+            mejor_profit = float(profits.max()) if len(profits) > 0 else 0
+        if mejor_gap > 0:
+            st.metric("Mejor Gap", f"{mejor_gap:.1f} pts")
+        elif mejor_profit > 0:
+            st.metric("Mejor Profit", f"{mejor_profit:.1f}%")
+        else:
+            st.metric("Mejor Gap", "0")
 
     # Timeline
     if len(df_opor) > 0:
