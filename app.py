@@ -43,10 +43,10 @@ def query_table(table, select="*", filters="", order="timestamp.desc", limit=100
         url += f"&{filters}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
-        if r.status_code == 200:
-            return pd.DataFrame(r.json())
-        return pd.DataFrame()
-    except Exception:
+        data = r.json() if r.status_code == 200 else []
+        return pd.DataFrame(data) if data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"DB Error: {e}")
         return pd.DataFrame()
 
 
@@ -75,6 +75,9 @@ if page == "Dashboard":
         df_opor = query_table("oportunidades")
     if len(df_ses) == 0:
         df_ses = query_table("sesiones")
+
+    # Debug
+    st.caption(f"URL: {SUPABASE_URL[:30]}... | Key: {SUPABASE_KEY[:20]}... | Opor rows: {len(df_opor)} | Ses rows: {len(df_ses)}")
 
     with col1:
         st.metric("Oportunidades", len(df_opor))
