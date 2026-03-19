@@ -4,7 +4,8 @@ Accesible desde iPhone / cualquier navegador
 """
 import streamlit as st
 import pandas as pd
-import requests
+import urllib.request
+import json
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -37,13 +38,14 @@ HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 
 
 def query_table(table, select="*", filters="", order="timestamp.desc", limit=1000):
-    """Query Supabase REST API."""
+    """Query Supabase REST API via urllib (works on all Python versions)."""
     url = f"{SUPABASE_URL}/rest/v1/{table}?select={select}&order={order}&limit={limit}"
     if filters:
         url += f"&{filters}"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        data = r.json() if r.status_code == 200 else []
+        req = urllib.request.Request(url, headers=HEADERS)
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read().decode())
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as e:
         st.error(f"DB Error: {e}")
