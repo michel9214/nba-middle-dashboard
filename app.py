@@ -101,15 +101,16 @@ if page == "Dashboard":
     # Timeline
     if len(df_opor) > 0:
         st.subheader("Timeline de Oportunidades")
-        df_opor["hora"] = pd.to_datetime(df_opor["timestamp"]).dt.strftime("%m/%d %H:%M")
+        df_plot = df_opor.copy()
+        df_plot["timestamp"] = pd.to_datetime(df_plot["timestamp"])
+        # Use profit_pct for surebets, gap for middlings
+        df_plot["valor"] = df_plot["gap"].fillna(df_plot["profit_pct"]).fillna(1)
         fig = px.scatter(
-            df_opor,
+            df_plot,
             x="timestamp",
-            y="gap",
-            color="prioridad",
-            size="gap",
-            hover_data=["partido", "casa_a", "casa_b", "tipo"],
-            color_discrete_map={"ALTA": "red", "MEDIA": "orange", "BAJA": "gray"},
+            y="valor",
+            color="tipo",
+            hover_data=["partido", "casa_a", "casa_b", "prioridad"],
             title="Oportunidades detectadas",
         )
         st.plotly_chart(fig, use_container_width=True)
