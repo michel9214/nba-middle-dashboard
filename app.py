@@ -31,8 +31,8 @@ if not st.session_state.auth:
 
 
 # ── Supabase REST API ──
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+SUPABASE_URL = st.secrets["SUPABASE_URL"].strip().strip("'\"")
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip().strip("'\"")
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 
 
