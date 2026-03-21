@@ -258,21 +258,55 @@ elif page == "Surebets T-Money":
         if "status" in df.columns:
             successes = df[df["status"] == "SUCCESS"]
             if len(successes) > 0:
-                st.subheader("SUREBETS EXITOSAS")
-                for _, row in successes.iterrows():
-                    st.success(
-                        f"**{row.get('pct', 0):.2f}%** | {row.get('event', '?')} | "
-                        f"{row.get('sport', '?')}\n\n"
-                        f"**{row.get('casa1', '?')}**: {row.get('market1', '')} "
-                        f"odds: {row.get('initial_odds1', '?')} → {row.get('final_odds1', '?')} "
-                        f"({'HELD' if row.get('odds1_held') else 'MOVED'})\n\n"
-                        f"**{row.get('casa2', '?')}**: {row.get('market2', '')} "
-                        f"odds: {row.get('initial_odds2', '?')} → {row.get('final_odds2', '?')} "
-                        f"({'HELD' if row.get('odds2_held') else 'MOVED'})\n\n"
-                        f"Tiempo: {row.get('dt_total', 0):.1f}s | "
-                        f"Hold: {row.get('betslip_duration_s', 0):.0f}s | "
-                        f"Entre cuartos: {'Si' if row.get('between_quarters') else 'No'}"
-                    )
+                st.subheader(f"SUREBETS EXITOSAS ({len(successes)})")
+                for _, row in successes.sort_values("timestamp", ascending=False).iterrows():
+                    pct_val = float(row.get("pct", 0)) if pd.notna(row.get("pct")) else 0
+                    dt_val = float(row.get("dt_total", 0)) if pd.notna(row.get("dt_total")) else 0
+                    hold_val = float(row.get("betslip_duration_s", 0)) if pd.notna(row.get("betslip_duration_s")) else 0
+                    dt_click = float(row.get("dt_click", 0)) if pd.notna(row.get("dt_click")) else 0
+                    ts = row.get("timestamp", "?")
+
+                    with st.container():
+                        st.success(f"SUCCESS — {pct_val:.2f}% profit")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"""
+**Evento:** {row.get('event', '?')}
+**Deporte:** {row.get('sport', '?')}
+**Tab:** {row.get('tab', '?')}
+**Prioridad:** {row.get('priority', '?')}
+**NBA:** {'Si' if row.get('is_nba') else 'No'}
+**Entre cuartos:** {'Si' if row.get('between_quarters') else 'No'}
+**Fecha:** {ts}
+""")
+                        with col2:
+                            st.markdown(f"""
+**Tiempo total:** {dt_val:.1f}s
+**Tiempo click:** {dt_click:.2f}s
+**Hold en betslip:** {hold_val:.0f}s
+**Profit:** {pct_val:.2f}%
+""")
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.info(f"""
+**Casa 1: {row.get('casa1', '?')}** ({row.get('book1', row.get('casa1','?'))})
+- Mercado: {row.get('market1', '?')}
+- Cuota T-Money: {row.get('odds1', '?')}
+- Cuota inicial (click): {row.get('initial_odds1', '?')}
+- Cuota final ({hold_val:.0f}s): {row.get('final_odds1', '?')}
+- Mantuvo: {'SI' if row.get('odds1_held') else 'NO'}
+""")
+                        with c2:
+                            st.info(f"""
+**Casa 2: {row.get('casa2', '?')}** ({row.get('book2', row.get('casa2','?'))})
+- Mercado: {row.get('market2', '?')}
+- Cuota T-Money: {row.get('odds2', '?')}
+- Cuota inicial (click): {row.get('initial_odds2', '?')}
+- Cuota final ({hold_val:.0f}s): {row.get('final_odds2', '?')}
+- Mantuvo: {'SI' if row.get('odds2_held') else 'NO'}
+""")
+                        st.divider()
 
         # Full table
         st.subheader("Todas las detecciones")
