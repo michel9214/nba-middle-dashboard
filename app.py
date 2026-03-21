@@ -231,8 +231,51 @@ elif page == "Surebets T-Money":
             fig.update_xaxes(title="Profit %")
             st.plotly_chart(fig, use_container_width=True)
 
-        # Table
-        st.subheader("Detalle")
+        # Executed surebets detail
+        if "initial_odds1" in df.columns:
+            executed = df[df["status"].isin(["SUCCESS", "ODDS_CHANGED", "REJECTED", "CLICK_FAIL", "NAV_FAIL"])]
+            executed = executed[executed["initial_odds1"].notna() | executed["dt_total"].notna()]
+            if len(executed) > 0:
+                st.subheader("Ejecuciones detalladas")
+                exec_cols = [c for c in [
+                    "timestamp", "pct", "status", "sport", "event",
+                    "casa1", "market1", "initial_odds1", "final_odds1", "odds1_held",
+                    "casa2", "market2", "initial_odds2", "final_odds2", "odds2_held",
+                    "dt_total", "dt_click", "betslip_duration_s", "between_quarters",
+                ] if c in executed.columns]
+                st.dataframe(
+                    executed[exec_cols].sort_values("timestamp", ascending=False).head(50),
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "pct": st.column_config.NumberColumn("Profit %", format="%.2f%%"),
+                        "dt_total": st.column_config.NumberColumn("Total (s)", format="%.1f"),
+                        "dt_click": st.column_config.NumberColumn("Click (s)", format="%.2f"),
+                        "betslip_duration_s": st.column_config.NumberColumn("Hold (s)", format="%.0f"),
+                    },
+                )
+
+        # SUCCESS highlight
+        if "status" in df.columns:
+            successes = df[df["status"] == "SUCCESS"]
+            if len(successes) > 0:
+                st.subheader("SUREBETS EXITOSAS")
+                for _, row in successes.iterrows():
+                    st.success(
+                        f"**{row.get('pct', 0):.2f}%** | {row.get('event', '?')} | "
+                        f"{row.get('sport', '?')}\n\n"
+                        f"**{row.get('casa1', '?')}**: {row.get('market1', '')} "
+                        f"odds: {row.get('initial_odds1', '?')} → {row.get('final_odds1', '?')} "
+                        f"({'HELD' if row.get('odds1_held') else 'MOVED'})\n\n"
+                        f"**{row.get('casa2', '?')}**: {row.get('market2', '')} "
+                        f"odds: {row.get('initial_odds2', '?')} → {row.get('final_odds2', '?')} "
+                        f"({'HELD' if row.get('odds2_held') else 'MOVED'})\n\n"
+                        f"Tiempo: {row.get('dt_total', 0):.1f}s | "
+                        f"Hold: {row.get('betslip_duration_s', 0):.0f}s | "
+                        f"Entre cuartos: {'Si' if row.get('between_quarters') else 'No'}"
+                    )
+
+        # Full table
+        st.subheader("Todas las detecciones")
         display_cols = [c for c in ["timestamp", "pct", "sport", "event", "tab", "casa1", "casa2",
                         "market1", "odds1", "market2", "odds2", "status", "priority", "is_nba"]
                         if c in df_u.columns]
