@@ -337,7 +337,7 @@ elif page == "Surebets T-Money":
                      use_container_width=True, hide_index=True)
 
         # Distribucion de gaps
-        if df_f["gap"].notna().any():
+        if "gap" in df_f.columns and df_f["gap"].notna().any():
             st.subheader("Distribucion de Gaps")
             fig2 = px.histogram(df_f[df_f["gap"].notna()], x="gap", nbins=20, title="Gaps detectados")
             st.plotly_chart(fig2, use_container_width=True)
