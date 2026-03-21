@@ -102,7 +102,7 @@ if page == "Dashboard":
     if len(df_opor) > 0:
         st.subheader("Timeline de Oportunidades")
         df_plot = df_opor.copy()
-        df_plot["timestamp"] = pd.to_datetime(df_plot["timestamp"])
+        df_plot["timestamp"] = pd.to_datetime(df_plot["timestamp"], errors="coerce", utc=True)
         # Use profit_pct for surebets, gap for middlings
         df_plot["valor"] = df_plot["gap"].fillna(df_plot["profit_pct"]).fillna(1)
         fig = px.scatter(
@@ -158,7 +158,7 @@ elif page == "Oportunidades":
 
 # ── Surebets T-Money ──
 elif page == "Surebets T-Money":
-    st.title("💰 Surebets T-Money Monitor")
+    st.title("Surebets T-Money")
 
     since_iso = since.strftime("%Y-%m-%dT%H:%M:%S")
     df = query_table("tmoney_surebets", filters=f"timestamp=gte.{since_iso}", limit=5000)
@@ -166,7 +166,8 @@ elif page == "Surebets T-Money":
     if len(df) == 0:
         st.info("Sin datos de T-Money en este periodo")
     else:
-        # Dedup
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
         df_u = df.drop_duplicates(subset=["pct", "event", "market1"], keep="last")
 
         # KPIs
@@ -180,138 +181,157 @@ elif page == "Surebets T-Money":
             st.metric("Mejor %", f"{best:.2f}%")
         with col4:
             avg = float(df_u["pct"].mean()) if "pct" in df_u.columns and len(df_u) > 0 else 0
-            st.metric("Promedio %", f"{avg:.2f}%")
+            st.metric("Promedio", f"{avg:.2f}%")
         with col5:
-            success = len(df[df["status"] == "SUCCESS"]) if "status" in df.columns else 0
-            st.metric("SUCCESS", success)
+            n_success = len(df[df["status"] == "SUCCESS"]) if "status" in df.columns else 0
+            st.metric("SUCCESS", n_success)
 
-        # Status chart
+        # ══════ SUCCESS CARDS (estilo T-Money) ══════
         if "status" in df.columns:
-            st.subheader("Status de ejecucion")
+            successes = df[df["status"] == "SUCCESS"].sort_values("timestamp", ascending=False)
+            if len(successes) > 0:
+                st.markdown("---")
+                st.subheader(f"SUREBETS EXITOSAS ({len(successes)})")
+
+                for _, row in successes.iterrows():
+                    def safe(val, default="—"):
+                        return default if pd.isna(val) else val
+                    def safef(val, fmt=":.2f"):
+                        try:
+                            return f"{float(val):.2f}" if pd.notna(val) else "—"
+                        except (ValueError, TypeError):
+                            return str(val) if val else "—"
+
+                    pct = safef(row.get("pct"))
+                    sport = safe(row.get("sport"), "?")
+                    event = safe(row.get("event"), "?")
+                    tab = safe(row.get("tab"), "?")
+                    ts = row.get("timestamp")
+                    ts_str = ts.strftime("%d %b %Y %H:%M:%S") if pd.notna(ts) else "?"
+                    dt_total = safef(row.get("dt_total"), ":.1f")
+                    dt_click = safef(row.get("dt_click"))
+                    hold = safef(row.get("betslip_duration_s"), ":.0f")
+                    is_nba = "NBA" if row.get("is_nba") else "No"
+                    between_q = "SI" if row.get("between_quarters") else "No"
+                    stake1 = safef(row.get("stake1"), ":.2f") if "stake1" in row.index else "0.00"
+                    stake2 = safef(row.get("stake2"), ":.2f") if "stake2" in row.index else "0.00"
+
+                    # Card header
+                    st.markdown(
+                        f'<div style="background:#1a1a2e;border-radius:12px;padding:16px;margin-bottom:16px;'
+                        f'border-left:4px solid #00c853;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="color:#00c853;font-size:24px;font-weight:bold;">{pct}%</span>'
+                        f'<span style="color:#ff9800;font-size:14px;background:#2d2d44;padding:4px 12px;'
+                        f'border-radius:8px;">SUCCESS</span>'
+                        f'</div>'
+                        f'<div style="color:#aaa;font-size:13px;margin-top:4px;">'
+                        f'{sport} | {tab} | {ts_str}</div>'
+                        f'<div style="color:#fff;font-size:16px;margin-top:8px;font-weight:500;">'
+                        f'{event}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # Two rows for each bookmaker
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        casa1 = safe(row.get("casa1"), "?").upper()
+                        mkt1 = safe(row.get("market1"), "?")
+                        odds1_tm = safe(row.get("odds1"), "?")
+                        odds1_init = safe(row.get("initial_odds1"), "?")
+                        odds1_final = safe(row.get("final_odds1"), "?")
+                        held1 = row.get("odds1_held")
+                        held1_icon = "MANTUVO" if held1 else "CAMBIO"
+                        held1_color = "#00c853" if held1 else "#f44336"
+                        st.markdown(
+                            f'<div style="background:#16213e;border-radius:8px;padding:12px;">'
+                            f'<div style="color:#ff9800;font-weight:bold;font-size:14px;">{casa1}</div>'
+                            f'<div style="color:#ccc;font-size:12px;margin-top:4px;">Mercado: <b>{mkt1}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota T-Money: <b style="color:#fff;">{odds1_tm}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota click: <b style="color:#fff;">{odds1_init}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota final: '
+                            f'<b style="color:{held1_color};">{odds1_final}</b> {held1_icon}</div>'
+                            f'<div style="color:#ccc;font-size:12px;">Stake: <b style="color:#ff9800;">S/ {stake1}</b></div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                    with c2:
+                        casa2 = safe(row.get("casa2"), "?").upper()
+                        mkt2 = safe(row.get("market2"), "?")
+                        odds2_tm = safe(row.get("odds2"), "?")
+                        odds2_init = safe(row.get("initial_odds2"), "?")
+                        odds2_final = safe(row.get("final_odds2"), "?")
+                        held2 = row.get("odds2_held")
+                        held2_icon = "MANTUVO" if held2 else "CAMBIO"
+                        held2_color = "#00c853" if held2 else "#f44336"
+                        st.markdown(
+                            f'<div style="background:#16213e;border-radius:8px;padding:12px;">'
+                            f'<div style="color:#ff9800;font-weight:bold;font-size:14px;">{casa2}</div>'
+                            f'<div style="color:#ccc;font-size:12px;margin-top:4px;">Mercado: <b>{mkt2}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota T-Money: <b style="color:#fff;">{odds2_tm}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota click: <b style="color:#fff;">{odds2_init}</b></div>'
+                            f'<div style="color:#ccc;font-size:12px;">Cuota final: '
+                            f'<b style="color:{held2_color};">{odds2_final}</b> {held2_icon}</div>'
+                            f'<div style="color:#ccc;font-size:12px;">Stake: <b style="color:#ff9800;">S/ {stake2}</b></div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    # Timing bar
+                    st.markdown(
+                        f'<div style="background:#0f3460;border-radius:8px;padding:8px 12px;margin-top:8px;'
+                        f'display:flex;justify-content:space-around;color:#aaa;font-size:12px;">'
+                        f'<span>Click: <b style="color:#fff;">{dt_click}s</b></span>'
+                        f'<span>Hold: <b style="color:#fff;">{hold}s</b></span>'
+                        f'<span>Total: <b style="color:#fff;">{dt_total}s</b></span>'
+                        f'<span>NBA: <b style="color:#fff;">{is_nba}</b></span>'
+                        f'<span>Entre cuartos: <b style="color:#fff;">{between_q}</b></span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+        # ══════ Status + Charts ══════
+        st.markdown("---")
+        if "status" in df.columns:
             status_counts = df["status"].value_counts().reset_index()
             status_counts.columns = ["Status", "Count"]
-            fig = px.bar(status_counts, x="Status", y="Count", color="Status")
+            fig = px.bar(status_counts, x="Status", y="Count", color="Status",
+                         color_discrete_map={"SUCCESS": "#00c853", "DETECTED": "#2196f3",
+                                             "CLICK_FAIL": "#f44336", "NAV_FAIL": "#ff9800"})
             st.plotly_chart(fig, use_container_width=True)
 
-        # Sport + Casa breakdown
         col1, col2 = st.columns(2)
         with col1:
             if "sport" in df_u.columns:
-                st.subheader("Por deporte")
                 sports = df_u["sport"].str[:20].value_counts().head(8).reset_index()
                 sports.columns = ["Deporte", "Count"]
-                fig = px.pie(sports, values="Count", names="Deporte")
+                fig = px.pie(sports, values="Count", names="Deporte", title="Por deporte")
                 st.plotly_chart(fig, use_container_width=True)
-
         with col2:
             if "casa1" in df_u.columns and "casa2" in df_u.columns:
-                st.subheader("Par de casas")
                 df_u["pair"] = df_u["casa1"].fillna("?") + " vs " + df_u["casa2"].fillna("?")
                 pairs = df_u["pair"].value_counts().head(8).reset_index()
                 pairs.columns = ["Par", "Count"]
-                fig = px.bar(pairs, x="Par", y="Count", color="Par")
+                fig = px.bar(pairs, x="Par", y="Count", color="Par", title="Por par de casas")
                 st.plotly_chart(fig, use_container_width=True)
 
         # Timeline
         if "timestamp" in df_u.columns and "pct" in df_u.columns:
-            st.subheader("Timeline")
-            df_plot = df_u.copy()
-            df_plot["timestamp"] = pd.to_datetime(df_plot["timestamp"])
-            fig = px.scatter(df_plot, x="timestamp", y="pct",
-                color="status" if "status" in df_plot.columns else None,
-                hover_data=[c for c in ["event", "casa1", "casa2", "market1", "sport"] if c in df_plot.columns],
-                title="Oportunidades detectadas")
-            fig.update_yaxes(title="Profit %")
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Profit distribution
-        if "pct" in df_u.columns:
-            st.subheader("Distribucion de profit")
-            fig = px.histogram(df_u, x="pct", nbins=30)
-            fig.update_xaxes(title="Profit %")
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Executed surebets detail
-        if "initial_odds1" in df.columns:
-            executed = df[df["status"].isin(["SUCCESS", "ODDS_CHANGED", "REJECTED", "CLICK_FAIL", "NAV_FAIL"])]
-            executed = executed[executed["initial_odds1"].notna() | executed["dt_total"].notna()]
-            if len(executed) > 0:
-                st.subheader("Ejecuciones detalladas")
-                exec_cols = [c for c in [
-                    "timestamp", "pct", "status", "sport", "event",
-                    "casa1", "market1", "initial_odds1", "final_odds1", "odds1_held",
-                    "casa2", "market2", "initial_odds2", "final_odds2", "odds2_held",
-                    "dt_total", "dt_click", "betslip_duration_s", "between_quarters",
-                ] if c in executed.columns]
-                st.dataframe(
-                    executed[exec_cols].sort_values("timestamp", ascending=False).head(50),
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        "pct": st.column_config.NumberColumn("Profit %", format="%.2f%%"),
-                        "dt_total": st.column_config.NumberColumn("Total (s)", format="%.1f"),
-                        "dt_click": st.column_config.NumberColumn("Click (s)", format="%.2f"),
-                        "betslip_duration_s": st.column_config.NumberColumn("Hold (s)", format="%.0f"),
-                    },
-                )
-
-        # SUCCESS highlight
-        if "status" in df.columns:
-            successes = df[df["status"] == "SUCCESS"]
-            if len(successes) > 0:
-                st.subheader(f"SUREBETS EXITOSAS ({len(successes)})")
-                for _, row in successes.sort_values("timestamp", ascending=False).iterrows():
-                    pct_val = float(row.get("pct", 0)) if pd.notna(row.get("pct")) else 0
-                    dt_val = float(row.get("dt_total", 0)) if pd.notna(row.get("dt_total")) else 0
-                    hold_val = float(row.get("betslip_duration_s", 0)) if pd.notna(row.get("betslip_duration_s")) else 0
-                    dt_click = float(row.get("dt_click", 0)) if pd.notna(row.get("dt_click")) else 0
-                    ts = row.get("timestamp", "?")
-
-                    with st.container():
-                        st.success(f"SUCCESS — {pct_val:.2f}% profit")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown(f"""
-**Evento:** {row.get('event', '?')}
-**Deporte:** {row.get('sport', '?')}
-**Tab:** {row.get('tab', '?')}
-**Prioridad:** {row.get('priority', '?')}
-**NBA:** {'Si' if row.get('is_nba') else 'No'}
-**Entre cuartos:** {'Si' if row.get('between_quarters') else 'No'}
-**Fecha:** {ts}
-""")
-                        with col2:
-                            st.markdown(f"""
-**Tiempo total:** {dt_val:.1f}s
-**Tiempo click:** {dt_click:.2f}s
-**Hold en betslip:** {hold_val:.0f}s
-**Profit:** {pct_val:.2f}%
-""")
-
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.info(f"""
-**Casa 1: {row.get('casa1', '?')}** ({row.get('book1', row.get('casa1','?'))})
-- Mercado: {row.get('market1', '?')}
-- Cuota T-Money: {row.get('odds1', '?')}
-- Cuota inicial (click): {row.get('initial_odds1', '?')}
-- Cuota final ({hold_val:.0f}s): {row.get('final_odds1', '?')}
-- Mantuvo: {'SI' if row.get('odds1_held') else 'NO'}
-""")
-                        with c2:
-                            st.info(f"""
-**Casa 2: {row.get('casa2', '?')}** ({row.get('book2', row.get('casa2','?'))})
-- Mercado: {row.get('market2', '?')}
-- Cuota T-Money: {row.get('odds2', '?')}
-- Cuota inicial (click): {row.get('initial_odds2', '?')}
-- Cuota final ({hold_val:.0f}s): {row.get('final_odds2', '?')}
-- Mantuvo: {'SI' if row.get('odds2_held') else 'NO'}
-""")
-                        st.divider()
+            df_plot = df_u.dropna(subset=["timestamp", "pct"])
+            if len(df_plot) > 0:
+                fig = px.scatter(df_plot, x="timestamp", y="pct",
+                    color="status" if "status" in df_plot.columns else None,
+                    hover_data=[c for c in ["event", "casa1", "casa2"] if c in df_plot.columns],
+                    title="Timeline")
+                fig.update_yaxes(title="Profit %")
+                st.plotly_chart(fig, use_container_width=True)
 
         # Full table
-        st.subheader("Todas las detecciones")
+        st.subheader("Detalle")
         display_cols = [c for c in ["timestamp", "pct", "sport", "event", "tab", "casa1", "casa2",
-                        "market1", "odds1", "market2", "odds2", "status", "priority", "is_nba"]
+                        "market1", "odds1", "market2", "odds2", "status", "is_nba"]
                         if c in df_u.columns]
         st.dataframe(df_u[display_cols].sort_values("pct", ascending=False).head(100),
                      use_container_width=True, hide_index=True)
