@@ -54,7 +54,7 @@ def query_table(table, select="*", filters="", order="timestamp.desc", limit=100
 
 # ── Sidebar ──
 st.sidebar.title("🏀 NBA Middle Lab")
-page = st.sidebar.radio("", ["Dashboard", "Oportunidades", "Lineas", "Sesiones"])
+page = st.sidebar.radio("", ["Dashboard", "Surebets T-Money", "Oportunidades", "Lineas", "Sesiones"])
 
 # Date range filter
 st.sidebar.markdown("---")
@@ -154,6 +154,90 @@ elif page == "Oportunidades":
         casas = pd.concat([df_f["casa_a"], df_f["casa_b"]]).value_counts()
         fig = px.bar(x=casas.index, y=casas.values, labels={"x": "Casa", "y": "Apariciones"})
         st.plotly_chart(fig, use_container_width=True)
+
+
+# ── Surebets T-Money ──
+elif page == "Surebets T-Money":
+    st.title("💰 Surebets T-Money Monitor")
+
+    since_iso = since.strftime("%Y-%m-%dT%H:%M:%S")
+    df = query_table("tmoney_surebets", filters=f"timestamp=gte.{since_iso}", limit=5000)
+
+    if len(df) == 0:
+        st.info("Sin datos de T-Money en este periodo")
+    else:
+        # Dedup
+        df_u = df.drop_duplicates(subset=["pct", "event", "market1"], keep="last")
+
+        # KPIs
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Total", len(df))
+        with col2:
+            st.metric("Unicas", len(df_u))
+        with col3:
+            best = float(df_u["pct"].max()) if "pct" in df_u.columns and len(df_u) > 0 else 0
+            st.metric("Mejor %", f"{best:.2f}%")
+        with col4:
+            avg = float(df_u["pct"].mean()) if "pct" in df_u.columns and len(df_u) > 0 else 0
+            st.metric("Promedio %", f"{avg:.2f}%")
+        with col5:
+            success = len(df[df["status"] == "SUCCESS"]) if "status" in df.columns else 0
+            st.metric("SUCCESS", success)
+
+        # Status chart
+        if "status" in df.columns:
+            st.subheader("Status de ejecucion")
+            status_counts = df["status"].value_counts().reset_index()
+            status_counts.columns = ["Status", "Count"]
+            fig = px.bar(status_counts, x="Status", y="Count", color="Status")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Sport + Casa breakdown
+        col1, col2 = st.columns(2)
+        with col1:
+            if "sport" in df_u.columns:
+                st.subheader("Por deporte")
+                sports = df_u["sport"].str[:20].value_counts().head(8).reset_index()
+                sports.columns = ["Deporte", "Count"]
+                fig = px.pie(sports, values="Count", names="Deporte")
+                st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            if "casa1" in df_u.columns and "casa2" in df_u.columns:
+                st.subheader("Par de casas")
+                df_u["pair"] = df_u["casa1"].fillna("?") + " vs " + df_u["casa2"].fillna("?")
+                pairs = df_u["pair"].value_counts().head(8).reset_index()
+                pairs.columns = ["Par", "Count"]
+                fig = px.bar(pairs, x="Par", y="Count", color="Par")
+                st.plotly_chart(fig, use_container_width=True)
+
+        # Timeline
+        if "timestamp" in df_u.columns and "pct" in df_u.columns:
+            st.subheader("Timeline")
+            df_plot = df_u.copy()
+            df_plot["timestamp"] = pd.to_datetime(df_plot["timestamp"])
+            fig = px.scatter(df_plot, x="timestamp", y="pct",
+                color="status" if "status" in df_plot.columns else None,
+                hover_data=[c for c in ["event", "casa1", "casa2", "market1", "sport"] if c in df_plot.columns],
+                title="Oportunidades detectadas")
+            fig.update_yaxes(title="Profit %")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Profit distribution
+        if "pct" in df_u.columns:
+            st.subheader("Distribucion de profit")
+            fig = px.histogram(df_u, x="pct", nbins=30)
+            fig.update_xaxes(title="Profit %")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Table
+        st.subheader("Detalle")
+        display_cols = [c for c in ["timestamp", "pct", "sport", "event", "tab", "casa1", "casa2",
+                        "market1", "odds1", "market2", "odds2", "status", "priority", "is_nba"]
+                        if c in df_u.columns]
+        st.dataframe(df_u[display_cols].sort_values("pct", ascending=False).head(100),
+                     use_container_width=True, hide_index=True)
 
         # Distribucion de gaps
         if df_f["gap"].notna().any():
