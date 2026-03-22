@@ -53,8 +53,8 @@ def query_table(table, select="*", filters="", order="timestamp.desc", limit=100
 
 
 # ── Sidebar ──
-st.sidebar.title("🏀 NBA Middle Lab")
-page = st.sidebar.radio("", ["Dashboard", "Surebets T-Money", "Oportunidades", "Lineas", "Sesiones"])
+st.sidebar.title("Surebet Lab")
+page = st.sidebar.radio("", ["Aprendizaje", "Surebets T-Money", "Dashboard", "Oportunidades", "Lineas", "Sesiones"])
 
 # Date range filter
 st.sidebar.markdown("---")
@@ -406,3 +406,110 @@ elif page == "Sesiones":
             st.metric("Total Oportunidades", int(total_opor))
 
         st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# ── Aprendizaje ──
+elif page == "Aprendizaje":
+    st.title("Aprendizaje de Surebets")
+    st.caption("Datos del monitor WebSocket T-Money — duracion, patrones, casas")
+
+    df = query_table("surebet_learning", limit=50000, order="ts.desc")
+
+    if len(df) == 0:
+        st.info("Sin datos de aprendizaje aun")
+    else:
+        if "ts" in df.columns:
+            df["ts"] = pd.to_datetime(df["ts"], errors="coerce", utc=True)
+
+        # KPIs
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Total registros", f"{len(df):,}")
+        with col2:
+            both = df["both_ours"].sum() if "both_ours" in df.columns else 0
+            st.metric("Ambas nuestras", int(both))
+        with col3:
+            avg_dur = df["dur"].mean() if "dur" in df.columns else 0
+            st.metric("Duracion promedio", f"{avg_dur:.1f}s")
+        with col4:
+            gt5 = (df["dur"] > 5).sum() if "dur" in df.columns else 0
+            st.metric("Duran >5s", int(gt5))
+        with col5:
+            gt30 = (df["dur"] > 30).sum() if "dur" in df.columns else 0
+            st.metric("Duran >30s", int(gt30))
+
+        st.markdown("---")
+
+        # ══ Por deporte ══
+        st.subheader("Duracion por deporte")
+        if "sport" in df.columns and "dur" in df.columns:
+            sport_stats = df.groupby("sport").agg(
+                count=("dur", "size"),
+                avg_dur=("dur", "mean"),
+                max_dur=("dur", "max"),
+                gt5=("dur", lambda x: (x > 5).sum()),
+                avg_pct=("pct0", "mean"),
+            ).reset_index().sort_values("count", ascending=False)
+            sport_stats["gt5_pct"] = (sport_stats["gt5"] / sport_stats["count"] * 100).round(1)
+            sport_stats = sport_stats.rename(columns={
+                "sport": "Deporte", "count": "Total", "avg_dur": "Avg (s)",
+                "max_dur": "Max (s)", "gt5": ">5s", "gt5_pct": ">5s %", "avg_pct": "Avg %"
+            })
+            st.dataframe(sport_stats, use_container_width=True, hide_index=True)
+
+            fig = px.bar(sport_stats.head(10), x="Deporte", y="Avg (s)",
+                         color="Deporte", title="Duracion promedio por deporte")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ══ Por par de casas ══
+        st.subheader("Por par de casas")
+        if "c1" in df.columns and "c2" in df.columns:
+            df["pair"] = df["c1"].fillna("?") + " / " + df["c2"].fillna("?")
+            pair_stats = df.groupby("pair").agg(
+                count=("dur", "size"),
+                avg_dur=("dur", "mean"),
+                avg_pct=("pct0", "mean"),
+                both=("both_ours", "sum"),
+            ).reset_index().sort_values("count", ascending=False)
+            pair_stats = pair_stats.rename(columns={
+                "pair": "Par", "count": "Total", "avg_dur": "Avg (s)",
+                "avg_pct": "Avg %", "both": "Ambas nuestras"
+            })
+            st.dataframe(pair_stats.head(20), use_container_width=True, hide_index=True)
+
+        # ══ Casas individuales (frecuencia) ══
+        st.subheader("Frecuencia por casa")
+        if "c1" in df.columns and "c2" in df.columns:
+            all_houses = pd.concat([df["c1"], df["c2"]]).value_counts().reset_index()
+            all_houses.columns = ["Casa", "Apariciones"]
+            fig = px.bar(all_houses.head(15), x="Casa", y="Apariciones",
+                         color="Casa", title="Casas con mas surebets")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ══ Por mercado ══
+        st.subheader("Por mercado")
+        if "m1" in df.columns:
+            mkt = df["m1"].value_counts().head(15).reset_index()
+            mkt.columns = ["Mercado", "Count"]
+            fig = px.bar(mkt, x="Mercado", y="Count", color="Mercado")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ══ Distribucion de duracion ══
+        st.subheader("Distribucion de duracion")
+        if "dur" in df.columns:
+            fig = px.histogram(df[df["dur"] < 120], x="dur", nbins=50,
+                               title="Duracion de surebets (seg)", labels={"dur": "Segundos"})
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ══ Live vs Prematch ══
+        st.subheader("Live vs Prematch")
+        if "tab" in df.columns:
+            tab_stats = df.groupby("tab").agg(
+                count=("dur", "size"), avg_dur=("dur", "mean"), avg_pct=("pct0", "mean"),
+            ).reset_index()
+            st.dataframe(tab_stats, use_container_width=True, hide_index=True)
+
+        # ══ Top surebets mas largas ══
+        st.subheader("Top 20 surebets mas largas")
+        top = df.nlargest(20, "dur")[["ts", "dur", "pct0", "sport", "period", "event", "c1", "c2", "m1"]]
+        st.dataframe(top, use_container_width=True, hide_index=True)
