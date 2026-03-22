@@ -421,6 +421,14 @@ elif page == "Aprendizaje":
         if "ts" in df.columns:
             df["ts"] = pd.to_datetime(df["ts"], errors="coerce", utc=True)
 
+        # Filtro Live / Prematch
+        tab_options = ["Todos", "Live", "Prematch"]
+        tab_filter = st.radio("Tipo", tab_options, horizontal=True)
+        if tab_filter == "Live":
+            df = df[df["tab"] == "live"]
+        elif tab_filter == "Prematch":
+            df = df[df["tab"] == "prematch"]
+
         # KPIs
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
